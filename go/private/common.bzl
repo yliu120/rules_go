@@ -107,7 +107,7 @@ def env_execute(ctx, arguments, environment = {}, **kwargs):
     return ctx.execute(arguments, environment=environment, **kwargs)
   env_args = ["env", "-i"]
   environment = dict(environment)
-  for var in ["TMP", "TMPDIR", "LD_LIBRARY_PATH", "PATH"]:
+  for var in ["TMP", "TMPDIR"]:
     if var in ctx.os.environ and not var in environment:
       environment[var] = ctx.os.environ[var]
   for k, v in environment.items():
