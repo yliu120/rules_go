@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go/private:common.bzl",
+load(
+    "@io_bazel_rules_go//go/private:common.bzl",
     "sets",
 )
 
@@ -90,5 +91,6 @@ def bootstrap_compile(go,
       inputs = sources + go.stdlib.files,
       outputs = [out_lib],
       mnemonic = "GoCompile",
+      use_default_shell_env = True,
       command = "export GOROOT=$(pwd)/{} && {} {}".format(go.stdlib.root_file.dirname, go.stdlib.go.path, " ".join(args)),
   )
