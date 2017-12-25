@@ -68,6 +68,7 @@ def emit_compile(go,
       inputs = inputs,
       outputs = [out_lib],
       mnemonic = "GoCompile",
+      use_default_shell_env = True,
       executable = go.toolchain.tools.compile,
       arguments = [args],
   )
