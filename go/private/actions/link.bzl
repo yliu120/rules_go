@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go/private:common.bzl",
+load(
+    "@io_bazel_rules_go//go/private:common.bzl",
     "sets",
     "as_iterable",
 )
-load("@io_bazel_rules_go//go/private:mode.bzl",
+load(
+    "@io_bazel_rules_go//go/private:mode.bzl",
     "LINKMODE_NORMAL",
 )
 
@@ -131,6 +133,7 @@ def bootstrap_link(go,
       inputs = inputs + go.stdlib.files,
       outputs = [executable],
       mnemonic = "GoLink",
+      use_default_shell_env = True,
       command = "export GOROOT=$(pwd)/{} && {} {}".format(go.stdlib.root_file.dirname, go.stdlib.go.path, " ".join(args)),
   )
 
@@ -157,4 +160,3 @@ def _extract_extldflags(gc_linkopts, extldflags):
     else:
       filtered_gc_linkopts.append(opt)
   return filtered_gc_linkopts, extldflags
-
