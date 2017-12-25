@@ -111,6 +111,7 @@ def emit_link(go,
       mnemonic = "GoLink",
       executable = go.toolchain.tools.link,
       arguments = [args],
+      use_default_shell_env = True,
   )
 
 def bootstrap_link(go,
