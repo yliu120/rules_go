@@ -40,23 +40,27 @@ def emit_link(go,
 
   ld = None
   extldflags = []
-  if go.stdlib.cgo_tools:
-    ld = go.stdlib.cgo_tools.compiler_executable
-    extldflags.extend(go.stdlib.cgo_tools.options)
+  if go.cgo_tools:
+    ld = go.cgo_tools.compiler_executable
+    extldflags.extend(go.cgo_tools.options)
   extldflags.extend(["-Wl,-rpath,$ORIGIN/" + ("../" * pkg_depth)])
 
   gc_linkopts, extldflags = _extract_extldflags(gc_linkopts, extldflags)
 
   # Add in any mode specific behaviours
-  if archive.source.mode.race:
+  link_external = False
+  if go.mode.race:
     gc_linkopts.append("-race")
-  if archive.source.mode.msan:
+  if go.mode.msan:
     gc_linkopts.append("-msan")
-  if archive.source.mode.static:
-    gc_linkopts.extend(["-linkmode", "external"])
+  if go.mode.static:
+    link_external = True
     extldflags.append("-static")
-  if archive.source.mode.link != LINKMODE_NORMAL:
-    fail("Link mode {} is not yet supported".format(archive.source.mode.link))
+  if go.mode.link != LINKMODE_NORMAL:
+    gc_linkopts.extend(["-buildmode", go.mode.link])
+    link_external = True
+  if link_external:
+    gc_linkopts.extend(["-linkmode", "external"])
 
   args = go.args(go)
   args.add(["-L", "."])
@@ -93,7 +97,7 @@ def emit_link(go,
   args.add(["-o", executable])
   args.add(gc_linkopts)
   args.add(go.toolchain.flags.link)
-  if archive.source.mode.strip:
+  if go.mode.strip:
     args.add(["-w"])
 
   if ld:
@@ -127,11 +131,11 @@ def bootstrap_link(go,
   if executable == None: fail("executable is a required parameter")
 
   inputs = depset([archive.data.file])
-  args = ["tool", "link", "-o", executable.path]
+  args = ["tool", "link", "-s", "-o", executable.path]
   args.extend(gc_linkopts)
   args.append(archive.data.file.path)
   go.actions.run_shell(
-      inputs = inputs + go.stdlib.files,
+      inputs = inputs + go.sdk_files + go.sdk_tools,
       outputs = [executable],
       mnemonic = "GoLink",
       use_default_shell_env = True,

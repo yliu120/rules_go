@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go/private:context.bzl",
+load(
+    "@io_bazel_rules_go//go/private:context.bzl",
     "go_context",
 )
-load("@io_bazel_rules_go//go/private:common.bzl",
+load(
+    "@io_bazel_rules_go//go/private:common.bzl",
     "split_srcs",
     "join_srcs",
     "pkg_dir",
@@ -24,8 +26,13 @@ load("@io_bazel_rules_go//go/private:common.bzl",
     "as_list",
     "as_iterable",
 )
-load("@io_bazel_rules_go//go/private:providers.bzl",
+load(
+    "@io_bazel_rules_go//go/private:providers.bzl",
     "GoLibrary",
+)
+load(
+    "@io_bazel_rules_go//go/private:rules/rule.bzl",
+    "go_rule",
 )
 
 _CgoCodegen = provider()
@@ -56,10 +63,10 @@ def _select_archive(files):
 
 def _cgo_codegen_impl(ctx):
   go = go_context(ctx)
-  if not go.stdlib.cgo_tools:
+  if not go.cgo_tools:
     fail("Go toolchain does not support cgo")
   linkopts = ctx.attr.linkopts[:]
-  copts = go.stdlib.cgo_tools.c_options + ctx.attr.copts
+  copts = go.cgo_tools.c_options + ctx.attr.copts
   deps = depset([], order="topological")
   cgo_export_h = go.declare_file(go, path="_cgo_export.h")
   cgo_export_c = go.declare_file(go, path="_cgo_export.c")
@@ -67,7 +74,7 @@ def _cgo_codegen_impl(ctx):
   cgo_types = go.declare_file(go, path="_cgo_gotypes.go")
   out_dir = cgo_main.dirname
 
-  cc = go.stdlib.cgo_tools.compiler_executable
+  cc = go.cgo_tools.compiler_executable
   args = go.args(go)
   args.add(["-cc", str(cc), "-objdir", out_dir])
 
@@ -150,7 +157,7 @@ def _cgo_codegen_impl(ctx):
       ),
   ]
 
-_cgo_codegen = rule(
+_cgo_codegen = go_rule(
     _cgo_codegen_impl,
     attrs = {
         "srcs": attr.label_list(allow_files = True),
@@ -160,9 +167,7 @@ _cgo_codegen = rule(
         ),
         "copts": attr.string_list(),
         "linkopts": attr.string_list(),
-        "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
     },
-    toolchains = ["@io_bazel_rules_go//go:toolchain"],
 )
 
 def _cgo_import_impl(ctx):
@@ -188,7 +193,7 @@ def _cgo_import_impl(ctx):
       files = depset([out]),
   )
 
-_cgo_import = rule(
+_cgo_import = go_rule(
     _cgo_import_impl,
     attrs = {
         "cgo_o": attr.label(
@@ -196,9 +201,7 @@ _cgo_import = rule(
             single_file = True,
         ),
         "sample_go_srcs": attr.label_list(allow_files = True),
-        "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
     },
-    toolchains = ["@io_bazel_rules_go//go:toolchain"],
 )
 """Generates symbol-import directives for cgo
 
@@ -226,7 +229,6 @@ def _cgo_library_to_source(go, attr, source, merge):
   source["cgo_archive"] = library.cgo_archive
   source["runfiles"] = source["runfiles"].merge(attr.codegen.data_runfiles)
 
-
 def _cgo_collect_info_impl(ctx):
   go = go_context(ctx)
   codegen = ctx.attr.codegen[_CgoCodegen]
@@ -248,16 +250,26 @@ def _cgo_collect_info_impl(ctx):
       DefaultInfo(files = depset(), runfiles = runfiles),
   ]
 
-_cgo_collect_info = rule(
+_cgo_collect_info = go_rule(
     _cgo_collect_info_impl,
     attrs = {
-        "codegen": attr.label(mandatory = True, providers = [_CgoCodegen]),
-        "input_go_srcs": attr.label_list(mandatory = True, allow_files = [".go"]),
-        "gen_go_srcs": attr.label_list(mandatory = True, allow_files = [".go"]),
-        "lib": attr.label(mandatory = True, providers = ["cc"]),
-        "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
+        "codegen": attr.label(
+            mandatory = True,
+            providers = [_CgoCodegen],
+        ),
+        "input_go_srcs": attr.label_list(
+            mandatory = True,
+            allow_files = [".go"],
+        ),
+        "gen_go_srcs": attr.label_list(
+            mandatory = True,
+            allow_files = [".go"],
+        ),
+        "lib": attr.label(
+            mandatory = True,
+            providers = ["cc"],
+        ),
     },
-    toolchains = ["@io_bazel_rules_go//go:toolchain"],
 )
 """No-op rule that collects information from _cgo_codegen and cc_library
 info into a GoSourceList provider for easy consumption."""

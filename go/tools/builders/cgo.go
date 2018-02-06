@@ -31,14 +31,12 @@ import (
 
 func run(args []string) error {
 	sources := multiFlag{}
-	cc := ""
 	objdir := ""
 	dynout := ""
 	dynimport := ""
 	flags := flag.NewFlagSet("cgo", flag.ContinueOnError)
 	goenv := envFlags(flags)
 	flags.Var(&sources, "src", "A source file to be filtered and compiled")
-	flags.StringVar(&cc, "cc", "", "Sets the c compiler to use")
 	flags.StringVar(&objdir, "objdir", "", "The output directory")
 	flags.StringVar(&dynout, "dynout", "", "The output directory")
 	flags.StringVar(&dynimport, "dynimport", "", "The output directory")
@@ -46,6 +44,11 @@ func run(args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if err := goenv.update(); err != nil {
+		return err
+	}
+	// TODO: work out why setting CGO_LDFLAGS breaks cgo
+	goenv.ld_flags = []string{}
 	env := os.Environ()
 	env = append(env, goenv.Env()...)
 
@@ -75,6 +78,7 @@ func run(args []string) error {
 	bctx := goenv.BuildContext()
 	bctx.CgoEnabled = true
 	cgoSrcs := []string{}
+	cgoOuts := []string{}
 	pkgName := ""
 	for _, s := range sources {
 		bits := strings.SplitN(s, "=", 2)
@@ -134,6 +138,7 @@ func run(args []string) error {
 		if metadata.isCgo {
 			// add to cgo file list
 			cgoSrcs = append(cgoSrcs, in)
+			cgoOuts = append(cgoOuts, out)
 		} else {
 			// Non cgo file, copy the go and fake the c
 			if err := ioutil.WriteFile(out, data, 0644); err != nil {
@@ -169,13 +174,6 @@ func run(args []string) error {
 		copts = append(copts, args...)
 	}
 
-	// Add the absoulute path to the c compiler to the environment
-	if abs, err := filepath.Abs(cc); err == nil {
-		cc = abs
-	}
-	env = append(env, fmt.Sprintf("CC=%s", cc))
-	env = append(env, fmt.Sprintf("CXX=%s", cc))
-
 	goargs := []string{"tool", "cgo", "-objdir", objdir}
 	goargs = append(goargs, copts...)
 	goargs = append(goargs, cgoSrcs...)
@@ -185,6 +183,12 @@ func run(args []string) error {
 	cmd.Env = env
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("error running cgo: %v", err)
+	}
+	// Now we fix up the generated files
+	for _, src := range cgoOuts {
+		if err := fixupLineComments(src); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -233,6 +237,26 @@ func splitQuoted(s string) (r []string, err error) {
 		err = errors.New("unfinished escaping")
 	}
 	return args, err
+}
+
+// removes the abs prefix from //line comments to make source files reproducable
+func fixupLineComments(filename string) error {
+	const linePrefix = "//line "
+	trim := linePrefix + abs(".")
+	body, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(body), "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, trim) {
+			lines[i] = linePrefix + line[len(trim)+1:]
+		}
+	}
+	if err := ioutil.WriteFile(filename, []byte(strings.Join(lines, "\n")), 0666); err != nil {
+		return err
+	}
+	return nil
 }
 
 func main() {

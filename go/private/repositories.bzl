@@ -14,20 +14,19 @@
 
 # Once nested repositories work, this file should cease to exist.
 
-load("@io_bazel_rules_go//go/private:common.bzl", "check_version", "MINIMUM_BAZEL_VERSION")
+load("@io_bazel_rules_go//go/private:common.bzl", "MINIMUM_BAZEL_VERSION")
 load("@io_bazel_rules_go//go/private:repository_tools.bzl", "go_repository_tools")
 load("@io_bazel_rules_go//go/private:go_repository.bzl", "go_repository")
-load('@io_bazel_rules_go//go/private:rules/stdlib.bzl', "go_stdlib")
-load('@io_bazel_rules_go//go/toolchain:toolchains.bzl', "go_register_toolchains")
+load("@io_bazel_rules_go//go/private:skylib/lib/versions.bzl", "versions")
+load("@io_bazel_rules_go//go/toolchain:toolchains.bzl", "go_register_toolchains")
 load("@io_bazel_rules_go//go/platform:list.bzl", "GOOS_GOARCH")
 load("@io_bazel_rules_go//proto:gogo.bzl", "gogo_special_proto")
 
 def go_rules_dependencies():
   """See /go/workspace.rst#go-rules-dependencies for full documentation."""
+  versions.check(MINIMUM_BAZEL_VERSION)
 
-  check_version(MINIMUM_BAZEL_VERSION)
-
-  # Needed for gazelle and wtool
+  # Needed for gazelle
   _maybe(native.http_archive,
       name = "com_github_bazelbuild_buildtools",
       # master, as of 2017-08-14
@@ -55,36 +54,6 @@ def go_rules_dependencies():
       type = "zip",
   )
 
-  for goos, goarch in GOOS_GOARCH:
-    _maybe(go_stdlib,
-        name = "go_stdlib_{}_{}_cgo".format(goos, goarch),
-        goos = goos,
-        goarch = goarch,
-        race = False,
-        cgo = True,
-    )
-    _maybe(go_stdlib,
-        name = "go_stdlib_{}_{}_pure".format(goos, goarch),
-        goos = goos,
-        goarch = goarch,
-        race = False,
-        cgo = False,
-    )
-    _maybe(go_stdlib,
-        name = "go_stdlib_{}_{}_cgo_race".format(goos, goarch),
-        goos = goos,
-        goarch = goarch,
-        race = True,
-        cgo = True,
-    )
-    _maybe(go_stdlib,
-        name = "go_stdlib_{}_{}_pure_race".format(goos, goarch),
-        goos = goos,
-        goarch = goarch,
-        race = True,
-        cgo = False,
-    )
-
   _maybe(go_repository_tools,
       name = "io_bazel_rules_go_repository_tools",
   )
@@ -97,9 +66,9 @@ def go_rules_dependencies():
   )
   _maybe(native.http_archive,
       name = "com_google_protobuf",
-      # v3.5.0, latest as of 2017-11-24
-      url = "https://codeload.github.com/google/protobuf/zip/2761122b810fe8861004ae785cc3ab39f384d342",
-      strip_prefix = "protobuf-2761122b810fe8861004ae785cc3ab39f384d342",
+      # v3.5.1, latest as of 2018-01-11
+      url = "https://codeload.github.com/google/protobuf/zip/106ffc04be1abf3ff3399f54ccf149815b287dd9",
+      strip_prefix = "protobuf-106ffc04be1abf3ff3399f54ccf149815b287dd9",
       type = "zip",
   )
   _maybe(go_repository,

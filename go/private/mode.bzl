@@ -15,9 +15,14 @@
 # Modes are documented in go/modes.rst#compilation-modes
 
 LINKMODE_NORMAL = "normal"
+
 LINKMODE_SHARED = "shared"
+
 LINKMODE_PIE = "pie"
+
 LINKMODE_PLUGIN = "plugin"
+
+LINKMODES = [LINKMODE_NORMAL, LINKMODE_PLUGIN]
 
 def mode_string(mode):
   result = [mode.goos, mode.goarch]
@@ -54,7 +59,6 @@ def get_mode(ctx, go_toolchain, go_context_data):
   force_pure = "on" if go_toolchain.cross_compile else "auto"
   force_race = "off" if go_toolchain.bootstrap else "auto"
 
-  #TODO: allow link mode selection
   static = _ternary(
       getattr(ctx.attr, "static", None),
       "static" in ctx.features,
@@ -73,10 +77,11 @@ def get_mode(ctx, go_toolchain, go_context_data):
       force_pure,
       "pure" in ctx.features,
   )
+  linkmode = getattr(ctx.attr, "linkmode", LINKMODE_NORMAL)
   if race and pure:
     # You are not allowed to compile in race mode with pure enabled
     race = False
-  debug = ctx.var["COMPILATION_MODE"] == "debug"
+  debug = ctx.var["COMPILATION_MODE"] == "dbg"
   strip_mode = "sometimes"
   if go_context_data:
     strip_mode = go_context_data.strip
@@ -88,20 +93,16 @@ def get_mode(ctx, go_toolchain, go_context_data):
   goos = getattr(ctx.attr, "goos", None)
   if goos == None or goos == "auto":
     goos = go_toolchain.default_goos
-  elif not pure:
-    fail("If goos is set, pure must be true")
   goarch = getattr(ctx.attr, "goarch", None)
   if goarch == None or goarch == "auto":
     goarch = go_toolchain.default_goarch
-  elif not pure:
-    fail("If goarch is set, pure must be true")
 
   return struct(
       static = static,
       race = race,
       msan = msan,
       pure = pure,
-      link = LINKMODE_NORMAL,
+      link = linkmode,
       debug = debug,
       strip = strip,
       goos = goos,

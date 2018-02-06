@@ -12,8 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go/private:context.bzl", #TODO: This ought to be def
+load(
+    "@io_bazel_rules_go//go/private:context.bzl",  #TODO: This ought to be def
     "go_context",
+)
+load(
+    "@io_bazel_rules_go//go/private:rules/rule.bzl",
+    "go_rule",
 )
 
 def _go_embed_data_impl(ctx):
@@ -66,7 +71,7 @@ def _go_embed_data_impl(ctx):
       library, source,
   ]
 
-go_embed_data = rule(
+go_embed_data = go_rule(
     implementation = _go_embed_data_impl,
     attrs = {
         "package": attr.string(),
@@ -80,8 +85,6 @@ go_embed_data = rule(
             executable = True,
             cfg = "host",
         ),
-        "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
     },
-    toolchains = ["@io_bazel_rules_go//go:toolchain"],
 )
 """See go/extras.rst#go_embed_data for full documentation."""

@@ -12,10 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go/private:context.bzl",
+load(
+    "@io_bazel_rules_go//go/private:context.bzl",
     "go_context",
 )
-load("@io_bazel_rules_go//go/private:providers.bzl", "GoPath")
+load(
+    "@io_bazel_rules_go//go/private:providers.bzl",
+    "GoPath",
+)
+load(
+    "@io_bazel_rules_go//go/private:rules/rule.bzl",
+    "go_rule",
+)
 
 def _go_vet_generate_impl(ctx):
   print("""
@@ -36,7 +44,7 @@ Please do not rely on it for production use, but feel free to use it and file is
 export GOPATH="{gopath}"
 {go} tool vet {packages}
 """.format(
-      go=go.stdlib.go.short_path,
+      go=go.go.short_path,
       gopath=":".join(['$(pwd)/{})'.format(entry) for entry in gopath]),
       packages=" ".join(packages),
   ))
@@ -45,13 +53,14 @@ export GOPATH="{gopath}"
     runfiles = ctx.runfiles(files, collect_data = True),
   )
 
-_go_vet_generate = rule(
+_go_vet_generate = go_rule(
     _go_vet_generate_impl,
     attrs = {
-        "data": attr.label_list(providers=[GoPath], cfg = "data"),
-        "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
+        "data": attr.label_list(
+            providers = [GoPath],
+            cfg = "data",
+        ),
     },
-    toolchains = ["@io_bazel_rules_go//go:toolchain"],
 )
 
 def go_vet_test(name, data, **kwargs):

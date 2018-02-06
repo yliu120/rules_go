@@ -12,15 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go/private:common.bzl",
+load(
+    "@io_bazel_rules_go//go/private:common.bzl",
     "split_srcs",
     "sets",
     "as_tuple",
 )
-load("@io_bazel_rules_go//go/private:mode.bzl",
+load(
+    "@io_bazel_rules_go//go/private:mode.bzl",
     "mode_string",
 )
-load("@io_bazel_rules_go//go/private:providers.bzl",
+load(
+    "@io_bazel_rules_go//go/private:providers.bzl",
     "GoArchive",
     "GoArchiveData",
     "get_archive",
@@ -39,6 +42,7 @@ def emit_archive(go, source=None):
   lib_name = compilepath + ".a"
   out_lib = go.declare_file(go, path=lib_name)
   searchpath = out_lib.path[:-len(lib_name)]
+  testfilter = getattr(source.library, "testfilter", None)
 
   extra_objects = []
   for src in split.asm:
@@ -57,15 +61,17 @@ def emit_archive(go, source=None):
         archives = direct,
         out_lib = out_lib,
         gc_goopts = source.gc_goopts,
+        testfilter = testfilter,
     )
   else:
-    partial_lib = go.declare_file(go, path="partial", ext=".a")
+    partial_lib = go.declare_file(go, path=lib_name+"~partial", ext=".a")
     go.compile(go,
         sources = split.go,
         importpath = compilepath,
         archives = direct,
         out_lib = partial_lib,
         gc_goopts = source.gc_goopts,
+        testfilter = testfilter,
     )
     go.pack(go,
         in_lib = partial_lib,
@@ -77,7 +83,7 @@ def emit_archive(go, source=None):
       name = source.library.name,
       label = source.library.label,
       importpath = source.library.importpath,
-      exportpath = source.library.exportpath,
+      importmap = source.library.importmap,
       file = out_lib,
       srcs = as_tuple(source.srcs),
       searchpath = searchpath,

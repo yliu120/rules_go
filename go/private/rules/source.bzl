@@ -20,11 +20,17 @@
 # depend on a globally unique target that has a "go_prefix" transitive
 # info provider.
 
-load("@io_bazel_rules_go//go/private:context.bzl",
+load(
+    "@io_bazel_rules_go//go/private:context.bzl",
     "go_context",
 )
-load("@io_bazel_rules_go//go/private:providers.bzl",
+load(
+    "@io_bazel_rules_go//go/private:providers.bzl",
     "GoLibrary",
+)
+load(
+    "@io_bazel_rules_go//go/private:rules/rule.bzl",
+    "go_rule",
 )
 
 def _go_source_impl(ctx):
@@ -32,18 +38,24 @@ def _go_source_impl(ctx):
   go = go_context(ctx)
   library = go.new_library(go)
   source = go.library_to_source(go, ctx.attr, library, ctx.coverage_instrumented())
-  return [library, source]
+  return [
+      library, source,
+      DefaultInfo(
+          files = depset(source.srcs),
+      ),
+  ]
 
-go_source = rule(
+go_source = go_rule(
     _go_source_impl,
     attrs = {
-        "data": attr.label_list(allow_files = True, cfg = "data"),
+        "data": attr.label_list(
+            allow_files = True,
+            cfg = "data",
+        ),
         "srcs": attr.label_list(allow_files = True),
         "deps": attr.label_list(providers = [GoLibrary]),
         "embed": attr.label_list(providers = [GoLibrary]),
         "gc_goopts": attr.string_list(),
-        "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
     },
-    toolchains = ["@io_bazel_rules_go//go:toolchain"],
 )
 """See go/core.rst#go_source for full documentation."""

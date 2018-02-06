@@ -12,21 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go/private:providers.bzl",
+load(
+    "@io_bazel_rules_go//go/private:providers.bzl",
     "GoLibrary",
     "GoSource",
     "GoAspectProviders",
     "GoStdLib",
     "get_source",
 )
-load("@io_bazel_rules_go//go/platform:list.bzl",
+load(
+    "@io_bazel_rules_go//go/platform:list.bzl",
     "GOOS_GOARCH",
 )
-load("@io_bazel_rules_go//go/private:mode.bzl",
+load(
+    "@io_bazel_rules_go//go/private:mode.bzl",
     "get_mode",
     "mode_string",
 )
-load("@io_bazel_rules_go//go/private:common.bzl",
+load(
+    "@io_bazel_rules_go//go/private:common.bzl",
+    "paths",
     "structs",
     "goos_to_extension",
     "as_iterable",
@@ -34,34 +39,58 @@ load("@io_bazel_rules_go//go/private:common.bzl",
 
 GoContext = provider()
 
-def _declare_file(go, path="", ext="", name = ""):
-  filename = mode_string(go.mode) + "/"
-  filename += name if name else go._ctx.label.name
+EXPLICIT_PATH = "explicit"
+
+INFERRED_PATH = "inferred"
+
+EXPORT_PATH = "export"
+
+def _child_name(go, path, ext, name):
+  childname = mode_string(go.mode) + "/"
+  childname += name if name else go._ctx.label.name
   if path:
-    filename += "~/" + path
+    childname += "~/" + path
   if ext:
-    filename += ext
-  return go.actions.declare_file(filename)
+    childname += ext
+  return childname
+
+def _declare_file(go, path="", ext="", name = ""):
+  return go.actions.declare_file(_child_name(go, path, ext, name))
+
+def _declare_directory(go, path="", ext="", name = ""):
+  return go.actions.declare_directory(_child_name(go, path, ext, name))
 
 def _new_args(go):
   args = go.actions.args()
+  if go.stdlib:
+    root_file = go.stdlib.root_file
+  else:
+    root_file = go.package_list
   args.add([
-      "-go", go.stdlib.go,
-      "-root_file", go.stdlib.root_file,
+      "-go", go.go,
+      "-root_file", root_file,
       "-goos", go.mode.goos,
       "-goarch", go.mode.goarch,
-      "-compiler_path", "" if go.mode.pure else go.compiler_path,
       "-cgo=" + ("0" if go.mode.pure else "1"),
   ])
+  if go.cgo_tools:
+    args.add([
+      "-compiler_path", go.cgo_tools.compiler_path,
+      "-cc", go.cgo_tools.compiler_executable,
+    ])
+    args.add(go.cgo_tools.compiler_options, before_each = "-cpp_flag")
+    args.add(go.cgo_tools.linker_options, before_each = "-ld_flag")
   return args
 
-def _new_library(go, resolver=None, importable=True, **kwargs):
+def _new_library(go, name=None, importpath=None, resolver=None, importable=True, testfilter=None, **kwargs):
   return GoLibrary(
-      name = go._ctx.label.name,
+      name = go._ctx.label.name if not name else name,
       label = go._ctx.label,
-      importpath = go._inferredpath if importable else None, # The canonical import path for this library
-      exportpath = go._inferredpath, # The export source path for this library
+      importpath = go.importpath if not importpath else importpath,
+      importmap = getattr(go._ctx.attr, "importmap", ""),
+      pathtype = go.pathtype if importable else EXPORT_PATH,
       resolve = resolver,
+      testfilter = testfilter,
       **kwargs
   )
 
@@ -111,15 +140,26 @@ def _library_to_source(go, attr, library, coverage_instrumented):
     library.resolve(go, attr, source, _merge_embed)
   return GoSource(**source)
 
-
 def _infer_importpath(ctx):
   DEFAULT_LIB = "go_default_library"
   VENDOR_PREFIX = "/vendor/"
-  path = getattr(ctx.attr, "importpath", None)
+  # Check if import path was explicitly set
+  path = getattr(ctx.attr, "importpath", "")
+  # are we in forced infer mode?
   if path != "":
-    return path
+    return path, EXPLICIT_PATH
+  # See if we can collect importpath from embeded libraries
+  # This is the path that fixes tests as well
+  for embed in getattr(ctx.attr, "embed", []):
+    if GoLibrary not in embed:
+      continue
+    if embed[GoLibrary].pathtype == EXPLICIT_PATH:
+      return embed[GoLibrary].importpath, EXPLICIT_PATH
+  # TODO: stop using the prefix
   prefix = getattr(ctx.attr, "_go_prefix", None)
   path = prefix.go_prefix if prefix else ""
+  # Guess an import path based on the directory structure
+  # This should only really be relied on for binaries
   if path.endswith("/"):
     path = path[:-1]
   if ctx.label.package:
@@ -128,10 +168,23 @@ def _infer_importpath(ctx):
     path += "/" + ctx.label.name
   if path.rfind(VENDOR_PREFIX) != -1:
     path = path[len(VENDOR_PREFIX) + path.rfind(VENDOR_PREFIX):]
-  if path[0] == "/":
+  if path.startswith("/"):
     path = path[1:]
-  return path
+  return path, INFERRED_PATH
 
+def _get_go_binary(context_data):
+  for f in context_data.sdk_files:
+    parent = paths.dirname(f.path)
+    sdk = paths.dirname(parent)
+    parent = paths.basename(parent)
+    if parent != "bin":
+      continue
+    basename = paths.basename(f.path)
+    name, ext = paths.split_extension(basename)
+    if name != "go":
+      continue
+    return sdk, f
+  fail("Could not find go executable in go_sdk")
 
 def go_context(ctx, attr=None):
   if "@io_bazel_rules_go//go:toolchain" in ctx.toolchains:
@@ -146,33 +199,29 @@ def go_context(ctx, attr=None):
 
   context_data = attr._go_context_data
   mode = get_mode(ctx, toolchain, context_data)
+  root, binary = _get_go_binary(context_data)
 
-  stdlib = None
-  for check in [s[GoStdLib] for s in context_data.stdlib_all]:
-    if (check.goos == mode.goos and
-        check.goarch == mode.goarch and
-        check.race == mode.race and
-        check.pure == mode.pure):
-      if stdlib:
-        fail("Multiple matching standard library for "+mode_string(mode))
-      stdlib = check
-  if not stdlib:
-    fail("No matching standard library for "+mode_string(mode))
+  stdlib = getattr(attr, "_stdlib", None)
+  if stdlib:
+    stdlib = get_source(stdlib).stdlib
 
-  compiler_path = ""
-  if ctx.var.get("LD") and ctx.var.get("LD").rfind("/") > 0:
-    compiler_path, _ = ctx.var.get("LD").rsplit("/", 1)
-
+  importpath, pathtype = _infer_importpath(ctx)
   return GoContext(
       # Fields
       toolchain = toolchain,
       mode = mode,
+      root = root,
+      go = binary,
       stdlib = stdlib,
+      sdk_files = context_data.sdk_files,
+      sdk_tools = context_data.sdk_tools,
       actions = ctx.actions,
       exe_extension = goos_to_extension(mode.goos),
       crosstool = context_data.crosstool,
       package_list = context_data.package_list,
-      compiler_path = compiler_path,
+      importpath = importpath,
+      pathtype = pathtype,
+      cgo_tools = context_data.cgo_tools,
       # Action generators
       archive = toolchain.actions.archive,
       asm = toolchain.actions.asm,
@@ -187,38 +236,66 @@ def go_context(ctx, attr=None):
       new_library = _new_library,
       library_to_source = _library_to_source,
       declare_file = _declare_file,
+      declare_directory = _declare_directory,
 
       # Private
       _ctx = ctx, # TODO: All uses of this should be removed
-      _inferredpath = _infer_importpath(ctx), # TODO: remove when go_prefix goes away
   )
 
-def _stdlib_all():
-  stdlibs = []
-  for goos, goarch in GOOS_GOARCH:
-    stdlibs.extend([
-      Label("@go_stdlib_{}_{}_cgo".format(goos, goarch)),
-      Label("@go_stdlib_{}_{}_pure".format(goos, goarch)),
-      Label("@go_stdlib_{}_{}_cgo_race".format(goos, goarch)),
-      Label("@go_stdlib_{}_{}_pure_race".format(goos, goarch)),
-    ])
-  return stdlibs
-
 def _go_context_data(ctx):
-    return struct(
-        strip = ctx.attr.strip,
-        stdlib_all = ctx.attr._stdlib_all,
-        crosstool = ctx.files._crosstool,
-        package_list = ctx.file._package_list,
-    )
+  cpp = ctx.fragments.cpp
+  features = ctx.features
+  raw_compiler_options = cpp.compiler_options(features)
+  raw_linker_options = cpp.mostly_static_link_options(features, False)
+  options = (raw_compiler_options +
+      cpp.unfiltered_compiler_options(features) +
+      cpp.link_options +
+      raw_linker_options)
+  compiler_options = [o for o in raw_compiler_options if not o in [
+    "-fcolor-diagnostics",
+    "-Wall",
+  ]]
+  linker_options = [o for o in raw_linker_options if not o in [
+    "-Wl,--gc-sections",
+  ]]
+  compiler_path, _ = cpp.ld_executable.rsplit("/", 1)
+  return struct(
+      strip = ctx.attr.strip,
+      crosstool = ctx.files._crosstool,
+      package_list = ctx.file._package_list,
+      sdk_files = ctx.files._sdk_files,
+      sdk_tools = ctx.files._sdk_tools,
+      cgo_tools = struct(
+          compiler_path = compiler_path,
+          compiler_executable = cpp.compiler_executable,
+          ld_executable = cpp.ld_executable,
+          compiler_options = compiler_options,
+          linker_options = linker_options,
+          options = options,
+          c_options = cpp.c_options,
+      ),
+  )
 
 go_context_data = rule(
     _go_context_data,
     attrs = {
-        "strip": attr.string(mandatory=True),
+        "strip": attr.string(mandatory = True),
         # Hidden internal attributes
-        "_stdlib_all": attr.label_list(default = _stdlib_all()),
-        "_crosstool": attr.label(default=Label("//tools/defaults:crosstool")),
-        "_package_list": attr.label(allow_files = True, single_file = True, default="@go_sdk//:packages.txt"),
+        "_crosstool": attr.label(default = Label("//tools/defaults:crosstool")),
+        "_package_list": attr.label(
+            allow_files = True,
+            single_file = True,
+            default = "@go_sdk//:packages.txt",
+        ),
+        "_sdk_files": attr.label(
+            allow_files = True,
+            default="@go_sdk//:files",
+        ),
+        "_sdk_tools": attr.label(
+            allow_files = True,
+            cfg="host",
+            default="@go_sdk//:tools",
+        ),
     },
+    fragments = ["cpp"],
 )

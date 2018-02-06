@@ -101,7 +101,7 @@ go_register_toolchains_.
 If you wish to have more control over the toolchains you can instead just make direct
 calls to register_toolchains_ with only the toolchains you wish to install. You can see an
 example of this in `limiting the available toolchains`_.
-It is important to note that you **must** also register the boostrap toolchain for any other
+It is important to note that you **must** also register the bootstrap toolchain for any other
 toolchain that you register, otherwise the tools for that toolchain cannot be built.
 
 
@@ -116,16 +116,16 @@ Use
 
 If you are writing a new rule that wants to use the Go toolchain, you need to do a couple of things.
 First, you have to declare that you want to consume the toolchain on the rule declaration.
+The easiest way to do this is to use the go_rule wrapper, which adds in the toolchain and some
+hidden attributes that it consumes.
 
 .. code:: bzl
 
-  my_rule = rule(
+  my_rule = go_rule(
       _my_rule_impl,
       attrs = {
           ...
-          "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
       },
-      toolchains = ["@io_bazel_rules_go//go:toolchain"],
   )
 
 And then in the rule body, you need to get the toolchain itself and use it's action generators.
@@ -408,17 +408,15 @@ go_context
 This collects the information needed to form and return a :type:`GoContext` from a rule ctx.
 It uses the attrbutes and the toolchains.
 It can only be used in the implementation of a rule that has the go toolchain attached and
-the go context data as an attribute.
+the go context data as an attribute. To do this declare the rule using the go_rule wrapper.
 
 .. code:: bzl
 
-  my_rule = rule(
+  my_rule = go_rule(
       _my_rule_impl,
       attrs = {
           ...
-          "_go_context_data": attr.label(default=Label("@io_bazel_rules_go//:go_context_data")),
       },
-      toolchains = ["@io_bazel_rules_go//go:toolchain"],
   )
 
 
@@ -448,19 +446,22 @@ over time.
 Methods
 ^^^^^^^
 
-  * Action generators
-    * archive_
-    * asm_
-    * binary_
-    * compile_
-    * cover_
-    * link_
-    * pack_
-  * Helpers
-    * args_
-    * declare_file_
-    * library_to_source_
-    * new_library_
+* Action generators
+
+  * archive_
+  * asm_
+  * binary_
+  * compile_
+  * cover_
+  * link_
+  * pack_
+
+* Helpers
+
+  * args_
+  * declare_file_
+  * library_to_source_
+  * new_library_
 
 
 Fields
@@ -478,9 +479,27 @@ Fields
 | Controls the compilation setup affecting things like enabling profilers and sanitizers.          |
 | See `compilation modes`_ for more information about the allowed values.                          |
 +--------------------------------+-----------------------------------------------------------------+
+| :param:`go`                    | :type:`File`                                                    |
++--------------------------------+-----------------------------------------------------------------+
+| The main "go" binary used to run go sdk tools.                                                   |
++--------------------------------+-----------------------------------------------------------------+
+| :param:`root`                  | :type:`string`                                                  |
++--------------------------------+-----------------------------------------------------------------+
+| The GOROOT value to use.                                                                         |
++--------------------------------+-----------------------------------------------------------------+
 | :param:`stdlib`                | :type:`GoStdlib`                                                |
 +--------------------------------+-----------------------------------------------------------------+
 | The standard library and tools to use in this build mode.                                        |
++--------------------------------+-----------------------------------------------------------------+
+| :param:`sdk_files`             | :type:`list of File`                                            |
++--------------------------------+-----------------------------------------------------------------+
+| This is the full set of files exposed by the sdk. You should never need this, it is mainly used  |
+| when compiling the standard library.                                                             |
++--------------------------------+-----------------------------------------------------------------+
+| :param:`sdk_tools`             | :type:`list of File`                                            |
++--------------------------------+-----------------------------------------------------------------+
+| The set of tool binaries exposed by the sdk. You may need this as inputs to a rule that uses     |
+| `go tool`                                                                                        |
 +--------------------------------+-----------------------------------------------------------------+
 | :param:`actions`               | :type:`ctx.actions`                                             |
 +--------------------------------+-----------------------------------------------------------------+
